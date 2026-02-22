@@ -8,7 +8,7 @@ app.config['SECRET_KEY'] = 'dev_key_777'
 
 # --- SUPABASE BAĞLANTISI ---
 # Buradaki URL'yi Supabase panelinden (Settings > API) bulup değiştir knk
-SUPABASE_URL = "BURAYA_SUPABASE_URL_GELCEK" 
+SUPABASE_URL = "https://axyoasmvguxvcsxutsng.supabase.co" 
 SUPABASE_KEY = "sb_publishable_tcqc87q-qe_isAjASnVZLA_amjRZqLv"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -74,3 +74,4 @@ def handle_msg(data):
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
+
