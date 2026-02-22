@@ -11,9 +11,8 @@ SUPABASE_URL = "https://axyoasmvguxvcsxutsng.supabase.co"
 SUPABASE_KEY = "sb_publishable_tcqc87q-qe_isAjASnVZLA_amjRZqLv"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# VERCEL İÇİN KRİTİK: async_mode='gevent' veya 'eventlet' yerine 'threading' kalsın ama 
-# cors_allowed_origins'i '*' yaparak izinleri açalım.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# Vercel için en sade socket ayarı
+socketio = SocketIO(app, cors_allowed_origins="*")
 online_users = {}
 
 @app.route('/')
@@ -25,8 +24,7 @@ def home():
             if res.data and len(res.data) > 0 and res.data[0].get('friends'):
                 f_list = res.data[0]['friends'].split(',')
             return render_template('index.html', user=session['user'], friends=f_list)
-        except Exception as e:
-            print(f"Hata: {e}")
+        except:
             return render_template('index.html', user=session['user'], friends=[])
     return redirect(url_for('login'))
 
@@ -42,7 +40,7 @@ def login():
                 session['user'] = username
                 return redirect(url_for('home'))
             except Exception as e:
-                return f"Supabase Bağlantı Hatası: {e}. Lütfen tabloları kontrol et!"
+                return f"Hata: {e}"
     return render_template('login.html')
 
 @app.route('/add_friend', methods=['POST'])
@@ -62,9 +60,8 @@ def add_friend():
                 new_list = ",".join(filter(None, current_friends))
                 supabase.table('users').update({"friends": new_list}).eq('username', me_name).execute()
                 return jsonify({"success": True})
-    except:
-        pass
-    return jsonify({"success": False, "error": "Kullanıcı bulunamadı!"})
+    except: pass
+    return jsonify({"success": False})
 
 @socketio.on('connect')
 def connect():
@@ -79,9 +76,8 @@ def handle_msg(data):
         emit('new_private_msg', {'from': sender, 'msg': data['message']}, room=online_users[recipient])
     emit('new_private_msg', {'from': sender, 'msg': data['message']}, room=request.sid)
 
-# VERCEL GİRİŞ NOKTASI
-# Bu değişkeni Vercel'in görmesi şart
+# Vercel için handler
 app = app
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app)
