@@ -4,14 +4,17 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-# Vercel'de her restartta sessionların gitmemesi için sabit bir key daha iyidir ama şimdilik böyle kalsın
-app.config['SECRET_KEY'] = 'dev_key_123' 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SECRET_KEY'] = 'dev_key_123_karizma'
+
+# VERCEL İÇİN KRİTİK AYAR: 
+# Eğer Vercel'deysen dosyaya yazamazsın, o yüzden hafızada (RAM) çalıştırıyoruz.
+# Localdeysen 'sqlite:///database.db' yapabilirsin ama Vercel hatasını bu çözer.
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
-# Vercel gibi ortamlarda async_mode='eventlet' veya 'gevent' daha iyidir ama localde 'threading' çalışır
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Vercel serverless olduğu için WebSocket'i tam desteklemez ama bu ayarlar en stabil halidir
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -20,6 +23,7 @@ class User(db.Model):
 
 online_users = {}
 
+# Veritabanını her başlangıçta temiz oluşturur
 with app.app_context():
     db.create_all()
 
@@ -27,6 +31,9 @@ with app.app_context():
 def home():
     if 'user' in session:
         user_obj = User.query.filter_by(username=session['user']).first()
+        if not user_obj: # Session var ama DB sıfırlanmışsa (Vercel restart)
+            session.clear()
+            return redirect(url_for('login'))
         f_list = user_obj.friends.split(',') if user_obj.friends and user_obj.friends.strip() else []
         return render_template('index.html', user=session['user'], friends=f_list)
     return redirect(url_for('login'))
@@ -42,11 +49,13 @@ def login():
                 db.session.add(user)
                 db.session.commit()
             session['user'] = username
+            session.permanent = True
             return redirect(url_for('home'))
     return render_template('login.html')
 
 @app.route('/add_friend', methods=['POST'])
 def add_friend():
+    if 'user' not in session: return jsonify({"success": False})
     data = request.json
     friend_name = data.get('friend_name', '').strip()
     me = User.query.filter_by(username=session['user']).first()
@@ -75,6 +84,6 @@ def handle_msg(data):
         emit('new_private_msg', {'from': sender, 'msg': msg}, room=online_users[recipient])
     emit('new_private_msg', {'from': sender, 'msg': msg}, room=request.sid)
 
-# VERCEL İÇİN GEREKLİ: Uygulamayı dışarıya açıyoruz
+# Vercel'in uygulamayı görebilmesi için 'app' nesnesini globalde bırakıyoruz
 if __name__ == '__main__':
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=True)
