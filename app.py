@@ -7,12 +7,12 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dev_key_777'
 
 # --- SUPABASE BAĞLANTISI ---
-# Buradaki URL'yi Supabase panelinden (Settings > API) bulup değiştir knk
 SUPABASE_URL = "https://axyoasmvguxvcsxutsng.supabase.co" 
 SUPABASE_KEY = "sb_publishable_tcqc87q-qe_isAjASnVZLA_amjRZqLv"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Vercel için socketio ayarı
+# VERCEL İÇİN KRİTİK: async_mode='gevent' veya 'eventlet' yerine 'threading' kalsın ama 
+# cors_allowed_origins'i '*' yaparak izinleri açalım.
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 online_users = {}
 
@@ -22,12 +22,12 @@ def home():
         try:
             res = supabase.table('users').select('friends').eq('username', session['user']).execute()
             f_list = []
-            if res.data and res.data[0].get('friends'):
+            if res.data and len(res.data) > 0 and res.data[0].get('friends'):
                 f_list = res.data[0]['friends'].split(',')
             return render_template('index.html', user=session['user'], friends=f_list)
-        except:
-            session.clear()
-            return redirect(url_for('login'))
+        except Exception as e:
+            print(f"Hata: {e}")
+            return render_template('index.html', user=session['user'], friends=[])
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -35,34 +35,41 @@ def login():
     if request.method == 'POST':
         username = request.form['username'].strip()
         if username:
-            # Kullanıcıyı bul veya oluştur
-            res = supabase.table('users').select('*').eq('username', username).execute()
-            if not res.data:
-                supabase.table('users').insert({"username": username, "friends": ""}).execute()
-            session['user'] = username
-            return redirect(url_for('home'))
+            try:
+                res = supabase.table('users').select('*').eq('username', username).execute()
+                if not res.data:
+                    supabase.table('users').insert({"username": username, "friends": ""}).execute()
+                session['user'] = username
+                return redirect(url_for('home'))
+            except Exception as e:
+                return f"Supabase Bağlantı Hatası: {e}. Lütfen tabloları kontrol et!"
     return render_template('login.html')
 
 @app.route('/add_friend', methods=['POST'])
 def add_friend():
-    friend_name = request.json.get('friend_name', '').strip()
+    data = request.json
+    friend_name = data.get('friend_name', '').strip()
     me_name = session.get('user')
     if not me_name: return jsonify({"success": False})
 
-    target = supabase.table('users').select('*').eq('username', friend_name).execute()
-    if target.data and friend_name != me_name:
-        me_data = supabase.table('users').select('friends').eq('username', me_name).execute()
-        current_friends = me_data.data[0]['friends'].split(',') if me_data.data[0]['friends'] else []
-        if friend_name not in current_friends:
-            current_friends.append(friend_name)
-            new_list = ",".join(filter(None, current_friends))
-            supabase.table('users').update({"friends": new_list}).eq('username', me_name).execute()
-            return jsonify({"success": True})
+    try:
+        target = supabase.table('users').select('*').eq('username', friend_name).execute()
+        if target.data and friend_name != me_name:
+            me_data = supabase.table('users').select('friends').eq('username', me_name).execute()
+            current_friends = me_data.data[0]['friends'].split(',') if me_data.data[0]['friends'] else []
+            if friend_name not in current_friends:
+                current_friends.append(friend_name)
+                new_list = ",".join(filter(None, current_friends))
+                supabase.table('users').update({"friends": new_list}).eq('username', me_name).execute()
+                return jsonify({"success": True})
+    except:
+        pass
     return jsonify({"success": False, "error": "Kullanıcı bulunamadı!"})
 
 @socketio.on('connect')
 def connect():
-    if 'user' in session: online_users[session['user']] = request.sid
+    if 'user' in session: 
+        online_users[session['user']] = request.sid
 
 @socketio.on('private_message')
 def handle_msg(data):
@@ -72,6 +79,9 @@ def handle_msg(data):
         emit('new_private_msg', {'from': sender, 'msg': data['message']}, room=online_users[recipient])
     emit('new_private_msg', {'from': sender, 'msg': data['message']}, room=request.sid)
 
+# VERCEL GİRİŞ NOKTASI
+# Bu değişkeni Vercel'in görmesi şart
+app = app
+
 if __name__ == '__main__':
     socketio.run(app, debug=True)
-
