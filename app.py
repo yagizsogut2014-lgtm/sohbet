@@ -4,15 +4,16 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'sohbet_gizli_anahtar_99'
+app.config['SECRET_KEY'] = 'cok_gizli_777'
 
-# --- SUPABASE POSTGRES BAGLANTISI ---
-# Buradaki [YOUR-PASSWORD] yerine Supabase giris sifreni yaz knk!
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:[YOUR-PASSWORD]@db.axyoasmvguxvcsxutsng.supabase.co:5432/postgres'
+# --- SUPABASE BAĞLANTISI ---
+# Şifreni buraya yazarken @ veya / gibi karakterler varsa linki bozabilir. 
+# Eğer şifrende özel karakter varsa Supabase'den sadece harf/rakamlı bir şifre yap knk.
+DB_URL = 'postgresql://postgres:ŞİFRENİ_BURAYA_YAZ@db.axyoasmvguxvcsxutsng.supabase.co:5432/postgres'
+app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
-# Vercel'de en stabil calisan socket modu
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 class User(db.Model):
@@ -21,7 +22,6 @@ class User(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)
     friends = db.Column(db.Text, default="")
 
-# Tabloyu otomatik olusturur
 with app.app_context():
     db.create_all()
 
@@ -53,7 +53,6 @@ def add_friend():
     friend_name = data.get('friend_name', '').strip()
     me = User.query.filter_by(username=session['user']).first()
     target = User.query.filter_by(username=friend_name).first()
-
     if target and me and friend_name != me.username:
         friends = me.friends.split(',') if me.friends else []
         if friend_name not in friends:
@@ -61,19 +60,11 @@ def add_friend():
             me.friends = ",".join(filter(None, friends))
             db.session.commit()
             return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Kullanici bulunamadi!"})
-
-@socketio.on('connect')
-def connect():
-    pass
+    return jsonify({"success": False})
 
 @socketio.on('private_message')
 def handle_msg(data):
-    # Basit bir mesaj gonderme mantigi
     emit('new_private_msg', {'from': session.get('user'), 'msg': data['message']}, broadcast=True)
 
-# Vercel icin app'i disari veriyoruz
+# VERCEL İÇİN KRİTİK SATIR
 app = app
-
-if __name__ == '__main__':
-    socketio.run(app, debug=True)
